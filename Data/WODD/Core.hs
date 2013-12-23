@@ -2,6 +2,8 @@
 
 module Data.WODD.Core where
 
+
+---- IMPORTS ---------------------------------------
 import Prelude
 
 import Data.IntMap.Strict (IntMap)
@@ -17,15 +19,13 @@ import Control.Arrow ( (&&&) )
 import Control.Monad.State.Strict
    (State, runState, evalState, get, put, gets, modify)
 
+import Data.Hashable (Hashable, hash, hashWithSalt)
+-----------------------------------------------------
 
-type Index = Int
+import Data.WODD.Types
 
-type Value = Int -- ^ values in variable domain are indexed by integers
-data Domain = Domain {cardinality :: Int} deriving Show
+-----------------------------------------------------
 
-type Arc = (Value, 
-			Double, 
-			Index) 
 arcLabel :: Arc -> Value
 arcLabel  (l, _, _) = l
 
@@ -35,22 +35,10 @@ arcWeight (_, w, _) = w
 arcTarget :: Arc -> Index
 arcTarget (_, _, t) = t  
 
-data Node v = Terminal -- ^ a value of type d 
-			 | Branch !v -- ^ a node variable
-			    	  (U.Vector Arc) -- ^ vector of arcs from this node
-	deriving Show
-
 termId = 0
 
-data WODD v = WODD 
-	{ core :: !(IntMap (Node v)),
-	  next :: !Index,
-	  top  :: !Index
-	  --cache :: ! (IntIntMap Index)
-	}
-
 empty :: WODD v 
-empty = WODD {core = IntMap.singleton 0 Terminal,
+empty = WODD {core = IntMap.empty, --IntMap.singleton 0 Terminal,
 			  next = 1, 
 			  top  = 0}
 
@@ -71,56 +59,35 @@ fresh = do
     put $! s { next = succ i }
     return i
 
-register :: Ord v 
-		=>  Node v
+register :: Node v
 		-> 	State (WODD v) Index
+register Terminal = return 0
 register node = do
 		i <- fresh
 		s <- get
 		put $! s {core = IntMap.insert i node $ core s}
 		return i
 
--- | toDot outputs a string in format suitable for input to the "dot" program
--- from the graphviz suite.
-toDot :: (Show v) => WODD v -> String
-toDot (WODD idmap _ top) | IntMap.null idmap = "digraph BDD {}" 
-toDot (WODD idmap _ top) =
-    unlines [ "digraph BDD {"
-            -- Start in oval mode
-            , "node[shape=oval];"
-            , evalState (helper $ idToNode top) S.empty
-            , "}"
-            ]
-  where
-    idToNode = id &&& (idmap IntMap.!)
+access :: WODD v -> Node v 
+access wodd | (top wodd) == 0  = Terminal
+access wodd = case IntMap.lookup (top wodd) (core wodd) of 
+	Nothing   -> error "Data.WODD.access: could not find <top> in <core>."
+	Just node -> node
 
-    mkLabel lbl = "[label=\"" ++ lbl ++ "\"];"
-
-    helper (thisId, Terminal) = return $
-        -- switch to rectangle nodes for the leaf, before going back to ovals.
-        unlines [ "node[shape=rectangle];"
-                , show thisId 
-                , "node[shape=oval];"
-                ]
-    helper (thisId, Branch vid arcs) = do
-        -- Ensure we don't traverse children multiple times, if we have more
-        -- than one edge into a given node.
-        beenHere <- gets (thisId `S.member`)
-        if beenHere
-            then return ""
-            else do
-                strs <- mapM (helper . idToNode . arcTarget) (U.toList arcs)
-                modify (thisId `S.insert`)
-                let idStr = show thisId
-                return $ unlines $ 
-                   [ idStr ++ mkLabel (show vid)] 
-                   ++ concat [ [s, idStr ++ "->" ++ show i ++ mkLabel (show v) ] 
-                   				| (v, w, i) <- U.toList arcs | s <- strs]
+accessAt :: WODD v -> Index -> Node v
+accessAt wodd 0 = Terminal
+accessAt wodd idx = case IntMap.lookup idx (core wodd) of
+	Nothing   -> error "Data.WODD.access: could not find <idx> in <core>."
+	Just node -> node
 
 
-data Label = Label String deriving (Eq, Ord)
+
+data Label = Label String deriving (Eq)
 instance Show Label where
 	show (Label l) = l
+
+instance Hashable Label where
+	hashWithSalt i (Label l) = hashWithSalt i l
 
 test :: WODD Label
 test = make $ do 
