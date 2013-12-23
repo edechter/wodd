@@ -48,16 +48,23 @@ cabal-version:       >=1.10
 
 library
   -- Modules exported by the library.
-  -- exposed-modules:     
+    exposed-modules:  Data.WODD 
+                      Data.WODD.Core
+                      Data.WODD.IntIntMap
+                      Data.WODD.VarIntIntMap
   
   -- Modules included in this library but not exported.
   -- other-modules:       
   
   -- LANGUAGE extensions used by modules in this package.
-  -- other-extensions:    
+    other-extensions:    ParallelListComp
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.6 && <4.7
+  build-depends:       base >=4.6 && <4.7,
+                       containers >= 0.5.3.1,
+                       mtl        >= 2.1.2,
+                       vector     >= 0.10.0.1
+
   
   -- Directories containing source files.
   -- hs-source-dirs:      
