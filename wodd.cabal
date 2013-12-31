@@ -59,18 +59,18 @@ library
                       Data.WODD.IntIntMap
                       Data.WODD.VarIntIntMap
                       Data.WODD.Display
+                      Data.WODD.Language.Expression
   
   -- Modules included in this library but not exported.
   -- other-modules:       
   
   -- LANGUAGE extensions used by modules in this package.
-  other-extensions:    NoMonomorphismRestriction
-                       ParallelListComp
-  
+  other-extensions:    
+                      
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.6 && <4.7,
-                       containers >= 0.5.3.1,
-                       mtl        >= 2.1.2,
+                       containers >= 0.5.0.0,
+                       mtl        >= 2.1.2, 
                        vector     >= 0.10.0.1,
                        unordered-containers >= 0.2.3.3,
                        hashable             >= 1.2.0.6,
@@ -84,8 +84,9 @@ library
 
   
   -- Directories containing source files.
-  -- hs-source-dirs:      
+--  hs-source-dirs:    Data/WODD 
+--                      Data/WODD/Language
   
   -- Base language which the package is written in.
-  default-language:    Haskell2010
+-- default-language:    Haskell98
   

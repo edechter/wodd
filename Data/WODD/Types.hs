@@ -15,6 +15,9 @@ import qualified Data.HashMap.Strict as Map
 import Data.Function (on)
 import Data.Hashable (Hashable)
 
+import qualified Data.Sequence as Seq
+import Data.Sequence (Seq)
+
 ----------------------------------------------------
 
 
@@ -43,5 +46,8 @@ data WODD v = WODD
 	  top  :: !Index
 	  --cache :: ! (IntIntMap Index)
 	}
+
+type WoddCollection v = Seq (WODD v)
+
 
 

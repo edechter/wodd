@@ -37,6 +37,13 @@ arcTarget (_, _, t) = t
 
 termId = 0
 
+arcToLeaf :: Value -> Double -> Arc 
+arcToLeaf l w = (l, w, termId)
+arcToNode l w n = (l, w, n)
+
+arcsFromList :: [Arc] -> U.Vector Arc
+arcsFromList arcs = U.fromList arcs
+
 empty :: WODD v 
 empty = WODD {core = IntMap.empty, --IntMap.singleton 0 Terminal,
 			  next = 1, 
@@ -82,6 +89,8 @@ accessAt wodd idx = case IntMap.lookup idx (core wodd) of
 
 
 
+
+
 data Label = Label String deriving (Eq)
 instance Show Label where
 	show (Label l) = l
@@ -91,8 +100,9 @@ instance Hashable Label where
 
 test :: WODD Label
 test = make $ do 
-	nodeX1 <- register $ Branch (Label "x") $ U.fromList [(0, 0.5, termId), (1, 0.5, termId)]
-	nodeX2 <- register $ Branch (Label "x") $ U.fromList [(0, 0.9, termId), (1, 0.1, termId)]
-	node <- register $ Branch (Label "y") $ U.fromList [(0, 0.3, nodeX1), (1, 0.3, nodeX2)]
+	nodeX1 <- register $ Branch (Label "x") 
+						$ arcsFromList [arcToLeaf 0 0.5, arcToLeaf 1 0.5]
+	nodeX2 <- register $ Branch (Label "x") $ arcsFromList [(0, 0.9, termId), (1, 0.1, termId)]
+	node <- register $ Branch (Label "y") $ arcsFromList [(0, 0.3, nodeX1), (1, 0.3, nodeX2)]
 	return node
 
