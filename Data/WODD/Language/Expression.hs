@@ -3,13 +3,13 @@
 
 module Data.WODD.Language.Expression where
 
-import Prelude hiding (elem, foldl)
+import Prelude hiding (elem, foldl, or)
 import Data.WODD.Types 
 import Data.WODD.Core
 import qualified Data.WODD.Core as W (empty)
 import Data.WODD.Display
 import Data.Ratio
-import Data.List (findIndex) 
+import Data.List (findIndex, elemIndex) 
 import Data.Foldable (foldl)
 
 import Data.Sequence ((<|), (|>),  (><))
@@ -25,7 +25,7 @@ import Control.Monad.State.Strict
 
 
 infixl 7 |-> 
-infixr 0 <== 
+infixr 0 <== , <=|, <.>
 
 -- A Finite type is a mapping from [0..n] to a set of objects.
 -- Ideally, we would like the number of objects to be a parameter of the type. 
@@ -43,7 +43,7 @@ fromIndex a es | a >= numElem es = error "Expression2.fromIndex: requested index
                | otherwise    = es !! (fromIntegral a)
 
 toIndex   :: (Show e, Eq e, Integral a) => e -> [e] -> a
-toIndex e es = case findIndex (==e) es of 
+toIndex e es = case elemIndex e es of 
                 Just i -> fromIntegral i 
                 Nothing  -> error $ "Expression2.toIndex: cannot find element " ++ show e ++ "."
     
@@ -76,7 +76,7 @@ instance Monoid (RV a) where
     (RV xs) `mappend` (RV ys) = RV $ xs ++ ys
     mempty = RV []
 
-a |-> b = [(a, b)]
+
 
 data Expr a where 
   Ref    :: Finite e => V e -> Expr e
@@ -115,7 +115,7 @@ get :: Stmt (Int, Statement)
 get = Stmt $ \ a -> (a, a)
 
 put :: (Int, Statement) -> Stmt ()
-put s = Stmt $ \ _ -> ((), s)
+put s = Stmt $ const ((), s)
 
 
 statement :: Statement -> Stmt ()
@@ -130,42 +130,82 @@ evalStmt i (Stmt f) = snd $ f (i, Null)
 fromStmt :: Stmt a -> Statement 
 fromStmt (Stmt f) = snd . snd $ f (0, Null)
 
---class Assign a where 
---  (<==) :: V a -> Expr a -> Stmt ()
-
---instance Finite e => Assign e where 
 a <== b = statement $ Assign a b
 
-choice :: Finite e => [(e, Double)] -> Expr e
-choice = Choice . RV 
+a <=| b = do e <- b
+             a <== e
 
-bern :: Double -> Expr Bool
+(|->) :: Finite e => e -> Stmt (Expr a) -> [(e, Stmt (Expr a))]
+a |-> st = [(a, st)]
+
+(<.>) :: [(e, Stmt (Expr a))] -> [(e, Stmt (Expr a))] -> [(e, Stmt (Expr a))]
+(<.>) = (++)
+
+choice :: Finite e => [(e, Double)] -> Stmt (Expr e)
+choice xs = return $ Choice $ RV xs
+
+switch  :: Finite e => V e -> [(e, Stmt (Expr b))] -> Stmt (Expr b)
+switch v xs = do es <- sequence ms
+                 return $ Case v (zip ws es)
+              where (ws, ms) = unzip xs
+
+bern :: Double -> Stmt (Expr Bool)
 bern p = choice [(True, p), (False, 1 - p)]
 
-uniform :: Finite e => [e] -> RV e
-uniform es = RV $ [(x, 1.0 / n) | x <- es ]
+uniform :: Finite e => [e] -> Stmt (Expr e)
+uniform es = return . Choice . RV $ [(x, 1.0 / n) | x <- es ]
              where n = fromIntegral $ length es
 
-if_ :: V Bool -> Expr b -> Expr b -> Expr b
-if_ v ifTrue ifFalse = Case v [(True, ifTrue), (False, ifFalse)]
+if_ :: V Bool -> Stmt (Expr b) -> Stmt (Expr b) -> Stmt (Expr b)
+if_ v ifTrue ifFalse = do t <- ifTrue 
+                          f <- ifFalse 
+                          return $ Case v [(True, t), (False, f)]
 
-(||.) = Or
+or :: Expr Bool -> Expr Bool -> Stmt (Expr Bool)
+(Ref v1) `or` (Ref v2) = switch v1 $ 
+  True  |-> (switch v2 $ True  |-> wp1 True
+                     <.> False  |-> wp1 True)
+  <.> False |-> (switch v2 $ True  |-> wp1 True
+                      <.> False |->
+                          wp1 False)
+st1 ||. st2 = do e1 <- st1
+                 e2 <- st2
+                 case e1 of 
+                  (Ref x1) -> case e2 of 
+                               (Ref x2) -> e1 `or` e2 
+                               _        -> do x2 <- freshVar
+                                              x2 <== e2 
+                                              e1 `or` (Ref x2)
+                  _        -> case e2 of 
+                               (Ref x2) -> do x1 <- freshVar
+                                              x1 <== e1 
+                                              (Ref x1) `or` e2
+                               _        -> do x1 <- freshVar
+                                              x2 <- freshVar
+                                              x1 <== e1
+                                              x2 <== e2 
+                                              (Ref x1) `or` (Ref x2)
 
-switch   :: Finite e => V e -> [(e, Expr b)] -> Expr b
-switch = Case
+freshVar = do (i, s) <- get 
+              put $ (i+1, s)
+              return $ V $ "x_" ++ show i
 
-wp1 :: Finite e => e -> Expr e
+wp1 :: Finite e => e -> Stmt (Expr e)
 wp1 e = choice [(e, 1)]
 
-ref :: Finite e => V e -> Expr e
-ref v = switch v [(e, wp1 e) | e <- elem]
+eq :: Finite e => V e -> Stmt (Expr e)
+eq v = switch v [(e, wp1 e) | e <- elem]
+
+(.~) :: Finite e => V e -> V e -> Stmt ()
+v .~ w = v <=| switch w [(e, wp1 e) | e <- elem]
+
 
 prog = do let x = V "x" :: V Bool 
               y = V "y" :: V Bool
               z = V "z" :: V Bool
-          y <== bern 0.3
-          x <== if_ y (bern 0.4) (bern 0.9)
-          z <== (Ref x ||. Ref y)
+          y <=| bern 0.3
+          x <=| if_ y (bern 0.4) (bern 0.9)
+          --z <== (Ref x ||. Ref y)
 
 data Component = One | Two | Three deriving (Show, Eq)
 instance Finite Component  where 
@@ -183,21 +223,22 @@ mixture = do let z = V "z" :: V Component
                  y = V "y" :: V Color
                  --w = V "w" :: V (H Int)
                  bernColor p = choice [(Red, p), (Green, 1 - p)]
-             z <== (Choice (uniform elem) :: Expr Component)
+             z <=| (uniform elem :: Stmt (Expr Component))
              --w <== (Choice (uniform elem) :: Expr (H Int))
-             y <== switch z $    One   |-> bernColor 0.2
-                              <> Two   |-> bernColor 0.4
-                              <> Three |-> bernColor 0.6
+             y <=| switch z $     One   |-> bernColor 0.2
+                              <.> Two   |-> bernColor 0.4
+                              <.> Three |-> bernColor 0.6
 
 mkX i = V ("x" ++ show i) :: V Bool
 y = V "y" :: V Bool
-xGiveny = switch y $ True  |-> bern 0.5 
-                <>  False |-> bern 0.8
 
-iid = do y <== bern 0.2
+xGiveny = switch y $ True  |-> bern 0.5 
+                  <>  False |-> bern 0.8
+
+iid = do y <=| bern 0.2
          sequence $ 
             do x <- [mkX i | i <- [0..10]] 
-               return $ do x <== xGiveny 
+               return $ do x <=| xGiveny 
          return ()
 
 boolVar s = V s :: V Bool
@@ -205,23 +246,29 @@ aOrb = let z = boolVar "z"
            a = boolVar "a"
            b = boolVar "b"
            c = boolVar "c"
-       in do z <== bern 0.2 
-             a <== bern 0.3 
-             b <== bern 0.6
-             c <== if_ z 
-                      (ref a)
-                      (ref b) 
+       in do z <=| bern 0.2 
+             a <=| bern 0.3 
+             b <=| bern 0.6
+             c <=| if_ z 
+                      (eq a)
+                      (eq b) 
 
-uniformI low hi = RV $ [(i, 1.0/n) | i <- [low, hi]]
+uniformI low hi = return $ Choice $ RV $ [(i, 1.0/n) | i <- [low, hi]]
     where n = fromIntegral $ hi - low
 
 ors = let z = V "z" :: V Int
           xs = [mkX i | i <- [0..10]]
           c  = boolVar "c"
-      in do z <== Choice $ uniformI 0 10
-            sequence $ [x <== bern 0.2 | x <- xs]
-            c <== switch z $ [(i, ref x ) | x <- xs | i <- [0..10]]
+      in do z <=| uniformI 0 10
+            sequence $ [x <=| bern 0.2 | x <- xs]
+            c <=| switch z $ [(i, eq x ) | x <- xs | i <- [0..10]]
 
+or' = let y = boolVar "y"
+          z = boolVar "z"
+          w = boolVar "w"
+      in do y <=| bern 0.3
+            z <=| bern 0.6
+            w <=| eq y ||. eq z
 
 type UVSeq = Seq.Seq UV
 
@@ -281,18 +328,9 @@ statementToWODD vs (Sequence s1 s2)
       in wc >< wc'
 statementToWODD vs Null = Seq.empty
 
-main = let w = V "w" :: V Component
-           z = V "z" :: V Component
-           t = Choice (uniform elem) :: Expr Component
-           y = switch z $    One   |-> bern 0.2
-                          <> Two   |-> bern 0.4
-                          <> Three |-> bern 0.6
-           y1 = ref z
-           vs = (UV w) <| exprVars y1
-           assignment = Assign w (ref z)
-           wodd = statementToWODD (statementVars assignment) assignment
-       in 
-        do displayDot wodd
+main = let st = fromStmt or'
+           wc = statementToWODD (statementVars st) st
+       in displayDot wc
 
 
 

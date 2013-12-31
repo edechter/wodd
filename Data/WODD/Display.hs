@@ -21,7 +21,6 @@ import qualified Data.Vector.Unboxed as U
 
 import Data.Set()
 import qualified Data.Set as S
-
 import qualified Data.Foldable as Foldable (toList)
 
 import Control.Monad.State.Strict

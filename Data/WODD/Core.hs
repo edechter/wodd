@@ -1,4 +1,3 @@
-{-# Language ParallelListComp #-}
 
 module Data.WODD.Core where
 
@@ -13,6 +12,8 @@ import qualified Data.Vector.Unboxed as U
 
 import Data.Set()
 import qualified Data.Set as S
+
+import Data.Maybe (fromMaybe)
 
 import Control.Arrow ( (&&&) )
 
@@ -77,15 +78,16 @@ register node = do
 
 access :: WODD v -> Node v 
 access wodd | (top wodd) == 0  = Terminal
-access wodd = case IntMap.lookup (top wodd) (core wodd) of 
-	Nothing   -> error "Data.WODD.access: could not find <top> in <core>."
-	Just node -> node
+access wodd = fromMaybe
+  (error "Data.WODD.access: could not find <top> in <core>.")
+  (IntMap.lookup (top wodd) (core wodd))
+
 
 accessAt :: WODD v -> Index -> Node v
 accessAt wodd 0 = Terminal
-accessAt wodd idx = case IntMap.lookup idx (core wodd) of
-	Nothing   -> error "Data.WODD.access: could not find <idx> in <core>."
-	Just node -> node
+accessAt wodd idx = fromMaybe
+  (error "Data.WODD.access: could not find <idx> in <core>.")
+  (IntMap.lookup idx (core wodd))
 
 
 

@@ -38,7 +38,7 @@ apply op ord x y = make (handle (top x) (top y))
                             register $ Branch vx arcs'             
                         EQ -> do 
                             let v = if vx == vy then vx else error "Data.WODD.Apply.product/handle"
-                            arcs' <- liftM U.fromList $ zipArcs (U.toList arcsx) (U.toList arcsy)
+                            arcs' <- fmap U.fromList $ zipArcs (U.toList arcsx) (U.toList arcsy)
                             register $ Branch v arcs'  
 
         go iy (v, w, ix)   = do i' <- handle ix iy
@@ -65,12 +65,12 @@ product = apply $ \(v1, w1, _) (v2, w2, _) i
 
 data L = L Int deriving (Eq)
 instance Show L where
-    show (L i) = "x" ++ show i
+    show (L i) = 'x' : show i
 
 instance Hashable L where
     hashWithSalt i (L l) = hashWithSalt i l
 
-order = T.fromList $ map L [0..10]
+order = T.fromList $ fmap L [0..10]
 
 test1 :: WODD L
 test1 = make $ do 
