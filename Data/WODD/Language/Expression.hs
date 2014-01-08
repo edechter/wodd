@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs, FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, ParallelListComp #-}
 
 module Data.WODD.Language.Expression where
@@ -205,6 +205,9 @@ eq v = switch v [(e, wp1 e) | e <- elem]
 (.~) :: Finite e => V e -> V e -> Stmt ()
 v .~ w = v <=| switch w [(e, wp1 e) | e <- elem]
 
+true = wp1 True
+false = wp1 False
+
 ---------------------------------------------------------
 ---------------------------------------------------------
 
@@ -300,6 +303,8 @@ andProg = let y = boolVar "y"
                 z <=| bern 0.6
                 w <=| ifThenElse (eq y &&. eq z) (bern 0.9) (wp1 True)
 
+
+
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 -- Converting programs to WODDs ---------------------------------------------
@@ -379,7 +384,40 @@ statementToWODD vs (Sequence s1 s2)
 statementToWODD vs Null = Seq.empty
 
 
-main = let st = fromStmt andProg
+--data DiscreteSet k where 
+--  DiscreteInt :: Int -> DiscreteSet k
+--  DiscreteSet :: [k] -> DiscreteSet k 
+
+--enum :: Discrete k -> [k]
+--enum (DiscreteInt i) = [0..i]
+--enum (DiscreteSet xs) = xs
+
+
+
+data Ten = Ten Int deriving (Show, Eq)
+
+instance Finite Ten where 
+  elem = map Ten [(1::Int)..10]
+
+k s = concatMap f [1..]
+        where f 0 = [[]]
+              f i = [k:j| k <- s, j <- f (i-1)]
+
+instance Finite e => Finite [e] where 
+  elem = k elem
+
+
+mkList = let x = boolVar "x"
+             y = boolVar "y"
+             z = V "z" :: V [Bool]
+         in do x <=| true
+               y <=| false
+               z <=| wp1 [True, True]
+
+
+
+
+main = let st = fromStmt mkList
            wc = statementToWODD (statementVars st) st
        in displayDot wc
 
