@@ -1,24 +1,21 @@
 {-# LANGUAGE GADTs, FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, ParallelListComp #-}
+{-# LANGUAGE MultiParamTypeClasses, ParallelListComp #-}
 
 module Data.WODD.Language.Expression where
 
 import Prelude hiding (elem, foldl, or)
 import Data.WODD.Types
 import Data.WODD.Core
-import qualified Data.WODD.Core as W (empty)
 import Data.WODD.Display
-import Data.Ratio
-import Data.List (findIndex, elemIndex)
+import Data.List (elemIndex)
 import Data.Foldable (foldl)
 
 import Data.Sequence ((<|), (|>),  (><))
 import qualified Data.Sequence as Seq
 
 import qualified Data.List as List
-import Data.Maybe
 import Data.Monoid
-import Control.Applicative ((<$>), (<*>), (<*), (*>))
+--import Control.Applicative ((<$>), (<*>), (<*), (*>))
 import Control.Arrow (second)
 import Control.Monad.State.Strict
      (State(), runState, evalState)
@@ -84,7 +81,7 @@ numElem es = fromIntegral $ length es
 
 fromIndex :: Integral a => a -> [e] -> e
 fromIndex a es | a >= numElem es = error "Expression2.fromIndex: requested index larger than numElem."
-               | otherwise    = es !! (fromIntegral a)
+               | otherwise    = es !! fromIntegral a
 
 toIndex   :: (Show e, Eq e, Integral a) => e -> [e] -> a
 toIndex e es = case elemIndex e es of
@@ -126,7 +123,7 @@ put s = Stmt $ const ((), s)
 freshVar :: Finite e => Stmt (V e)
 -- | Return a fresh variable "x_<i>" and increment variable counter.
 freshVar = do (i, s) <- get
-              put $ (i+1, s)
+              put  (i+1, s)
               return $ V $ "x_" ++ show i
 
 statement :: Statement -> Stmt ()
@@ -185,11 +182,27 @@ if_ v ifTrue ifFalse = do t <- ifTrue
                           return $ Case v [(True, t), (False, f)]
 
 boolBinOp :: (Bool -> Bool -> Bool) -> V Bool -> V Bool -> Stmt (Expr Bool)
+-- | @boolBinOp f x y@ calculates an expression corresponding to the boolean @f@ applied to 
+--   the variables @x@ and @y@
 boolBinOp f v1 v2
-  = switch v1 $ True  |-> (switch v2 $ True  |-> wp1 (f True True)
-                                   <>  False |-> wp1 (f True False))
-            <>  False |-> (switch v2 $ True  |-> wp1 (f False True)
-                                   <>  False |-> wp1 (f False False))
+  = switch v1 $ True  |-> switch v2  (True  |-> wp1 (f True True)
+                                   <> False |-> wp1 (f True False))
+            <>  False |-> switch v2  (True  |-> wp1 (f False True)
+                                   <> False |-> wp1 (f False False))
+
+combineExprsWithBoolOp :: (Bool -> Bool -> Bool) 
+                       -> Stmt (Expr Bool) 
+                       -> Stmt (Expr Bool)
+                       -> Stmt (Expr Bool)
+combineExprsWithBoolOp f s1 s2 =
+  do e1 <- s1
+     e2 <- s2
+     x1 <- freshVar
+     x2 <- freshVar
+     x1 <== e1
+     x2 <== e2
+     boolBinOp f x1 x2
+
 
 ifThenElse pred_st true_st false_st =
  do x <- freshVar
@@ -208,102 +221,16 @@ v .~ w = v <=| switch w [(e, wp1 e) | e <- elem]
 true = wp1 True
 false = wp1 False
 
----------------------------------------------------------
----------------------------------------------------------
+s1 ||. s2 = combineExprsWithBoolOp (||) s1 s2
 
-st1 ||. st2 = do e1 <- st1
-                 e2 <- st2
-                 x1 <- freshVar
-                 x2 <- freshVar
-                 x1 <== e1
-                 x2 <== e2
-                 boolBinOp (||) x1 x2
+s1 &&. s2 = combineExprsWithBoolOp (&&) s1 s2
 
-st1 &&. st2 = do e1 <- st1
-                 e2 <- st2
-                 x1 <- freshVar
-                 x2 <- freshVar
-                 x1 <== e1
-                 x2 <== e2
-                 boolBinOp (&&) x1 x2
-
-
-
-
-prog = do let x = V "x" :: V Bool
-              y = V "y" :: V Bool
-              z = V "z" :: V Bool
-          y <=| bern 0.3
-          x <=| if_ y (bern 0.4) (bern 0.9)
-
-data Component = One | Two | Three deriving (Show, Eq)
-instance Finite Component  where
-    elem = [One, Two, Three]
-
-data Color     = Red | Green deriving (Show, Eq)
-instance Finite Color  where
-    elem = [Red, Green]
-
-
-mixture = do let z = V "z" :: V Component
-                 x = V "x" :: V Color
-                 y = V "y" :: V Color
-                 --w = V "w" :: V (H Int)
-                 bernColor p = choice [(Red, p), (Green, 1 - p)]
-             z <=| (uniform elem :: Stmt (Expr Component))
-             y <=| switch z $     One   |-> bernColor 0.2
-                              <.> Two   |-> bernColor 0.4
-                              <.> Three |-> bernColor 0.6
-
-mkX i = V ("x" ++ show i) :: V Bool
-y = V "y" :: V Bool
-
-xGiveny = switch y $ True  |-> bern 0.5
-                  <>  False |-> bern 0.8
-
-iid = do y <=| bern 0.2
-         sequence $
-            do x <- [mkX i | i <- [0..10]]
-               return $ do x <=| xGiveny
-         return ()
+mkX i = V $ 'x' : show i :: V Bool
 
 boolVar s = V s :: V Bool
-aOrb = let z = boolVar "z"
-           a = boolVar "a"
-           b = boolVar "b"
-           c = boolVar "c"
-       in do z <=| bern 0.2
-             a <=| bern 0.3
-             b <=| bern 0.6
-             c <=| if_ z
-                      (eq a)
-                      (eq b)
 
 uniformI low hi = return $ Choice $ RV $ [(i, 1.0/n) | i <- [low, hi]]
     where n = fromIntegral $ hi - low
-
-ors = let z = V "z" :: V Int
-          xs = [mkX i | i <- [0..10]]
-          c  = boolVar "c"
-      in do z <=| uniformI 0 10
-            sequence $ [x <=| bern 0.2 | x <- xs]
-            c <=| switch z $ [(i, eq x ) | x <- xs | i <- [0..10]]
-
-or' = let y = boolVar "y"
-          z = boolVar "z"
-          w = boolVar "w"
-      in do y <=| bern 0.3
-            z <=| bern 0.6
-            w <=| eq y ||. eq z
-
-andProg = let y = boolVar "y"
-              z = boolVar "z"
-              w = boolVar "w"
-          in do y <=| bern 0.3
-                z <=| bern 0.6
-                w <=| ifThenElse (eq y &&. eq z) (bern 0.9) (wp1 True)
-
-
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -384,28 +311,27 @@ statementToWODD vs (Sequence s1 s2)
 statementToWODD vs Null = Seq.empty
 
 
---data DiscreteSet k where 
---  DiscreteInt :: Int -> DiscreteSet k
---  DiscreteSet :: [k] -> DiscreteSet k 
+data FiniteSet k where 
+  FiniteInt :: Int -> FiniteSet Int
+  FiniteSet :: [k] -> FiniteSet k 
 
---enum :: Discrete k -> [k]
---enum (DiscreteInt i) = [0..i]
---enum (DiscreteSet xs) = xs
-
-
+enum :: FiniteSet k -> [k]
+enum (FiniteInt i)    = [0..i]
+enum (FiniteSet xs)   = xs
 
 data Ten = Ten Int deriving (Show, Eq)
 
 instance Finite Ten where 
   elem = map Ten [(1::Int)..10]
 
-k s = concatMap f [1..]
+-- | Generates all lists of of length 0 or greater consisting of elements from s
+allLists :: [a] -> [[a]]
+allLists s = concatMap f [1..]
         where f 0 = [[]]
               f i = [k:j| k <- s, j <- f (i-1)]
 
 instance Finite e => Finite [e] where 
-  elem = k elem
-
+  elem = allLists elem
 
 mkList = let x = boolVar "x"
              y = boolVar "y"
@@ -415,12 +341,84 @@ mkList = let x = boolVar "x"
                z <=| wp1 [True, True]
 
 
-
-
 main = let st = fromStmt mkList
            wc = statementToWODD (statementVars st) st
        in displayDot wc
 
+--------------------------------------------------------
+--------------------------------------------------------
+--------------------------------------------------------
+-- Sample Programs -------------------------------------
+--------------------------------------------------------
+
+data Component = One | Two | Three deriving (Show, Eq)
+instance Finite Component  where
+    elem = [One, Two, Three]
+
+data Color     = Red | Green deriving (Show, Eq)
+instance Finite Color  where
+    elem = [Red, Green]
+
+
+prog = do let x = V "x" :: V Bool
+              y = V "y" :: V Bool
+              z = V "z" :: V Bool
+          y <=| bern 0.3
+          x <=| if_ y (bern 0.4) (bern 0.9)
+
+
+mixture = do let z = V "z" :: V Component
+                 x = V "x" :: V Color
+                 y = V "y" :: V Color
+                 --w = V "w" :: V (H Int)
+                 bernColor p = choice [(Red, p), (Green, 1 - p)]
+             z <=| (uniform elem :: Stmt (Expr Component))
+             y <=| switch z $     One   |-> bernColor 0.2
+                              <.> Two   |-> bernColor 0.4
+                              <.> Three |-> bernColor 0.6
+
+y = V "y" :: V Bool
+
+xGiveny = switch y $ True  |-> bern 0.5
+                  <>  False |-> bern 0.8
+
+iid = do y <=| bern 0.2
+         sequence $
+            do x <- [mkX i | i <- [0..10]]
+               return $ do x <=| xGiveny
+         return ()
+
+aOrb = let z = boolVar "z"
+           a = boolVar "a"
+           b = boolVar "b"
+           c = boolVar "c"
+       in do z <=| bern 0.2
+             a <=| bern 0.3
+             b <=| bern 0.6
+             c <=| if_ z
+                      (eq a)
+                      (eq b)
+
+ors = let z = V "z" :: V Int
+          xs = [mkX i | i <- [0..10]]
+          c  = boolVar "c"
+      in do z <=| uniformI 0 10
+            sequence $ [x <=| bern 0.2 | x <- xs]
+            c <=| switch z $ [(i, eq x ) | x <- xs | i <- [0..10]]
+
+or' = let y = boolVar "y"
+          z = boolVar "z"
+          w = boolVar "w"
+      in do y <=| bern 0.3
+            z <=| bern 0.6
+            w <=| eq y ||. eq z
+
+andProg = let y = boolVar "y"
+              z = boolVar "z"
+              w = boolVar "w"
+          in do y <=| bern 0.3
+                z <=| bern 0.6
+                w <=| ifThenElse (eq y &&. eq z) (bern 0.9) (wp1 True)
 
 
 

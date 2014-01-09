@@ -5,22 +5,17 @@ module Data.WODD.Core where
 ---- IMPORTS ---------------------------------------
 import Prelude
 
-import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 
 import qualified Data.Vector.Unboxed as U
 
 import Data.Set()
-import qualified Data.Set as S
-
 import Data.Maybe (fromMaybe)
 
-import Control.Arrow ( (&&&) )
-
 import Control.Monad.State.Strict
-   (State, runState, evalState, get, put, gets, modify)
+   (State, runState, get, put)
 
-import Data.Hashable (Hashable, hash, hashWithSalt)
+import Data.Hashable (Hashable, hashWithSalt)
 -----------------------------------------------------
 
 import Data.WODD.Types
@@ -36,10 +31,13 @@ arcWeight (_, w, _) = w
 arcTarget :: Arc -> Index
 arcTarget (_, _, t) = t  
 
+termId :: Index
 termId = 0
 
 arcToLeaf :: Value -> Double -> Arc 
 arcToLeaf l w = (l, w, termId)
+
+arcToNode :: Value -> Double -> Index -> Arc
 arcToNode l w n = (l, w, n)
 
 arcsFromList :: [Arc] -> U.Vector Arc
@@ -77,20 +75,17 @@ register node = do
 		return i
 
 access :: WODD v -> Node v 
-access wodd | (top wodd) == 0  = Terminal
+access wodd | top wodd   == 0  = Terminal
 access wodd = fromMaybe
   (error "Data.WODD.access: could not find <top> in <core>.")
   (IntMap.lookup (top wodd) (core wodd))
 
 
 accessAt :: WODD v -> Index -> Node v
-accessAt wodd 0 = Terminal
+accessAt _ 0 = Terminal
 accessAt wodd idx = fromMaybe
   (error "Data.WODD.access: could not find <idx> in <core>.")
   (IntMap.lookup idx (core wodd))
-
-
-
 
 
 data Label = Label String deriving (Eq)
@@ -105,6 +100,6 @@ test = make $ do
 	nodeX1 <- register $ Branch (Label "x") 
 						$ arcsFromList [arcToLeaf 0 0.5, arcToLeaf 1 0.5]
 	nodeX2 <- register $ Branch (Label "x") $ arcsFromList [(0, 0.9, termId), (1, 0.1, termId)]
-	node <- register $ Branch (Label "y") $ arcsFromList [(0, 0.3, nodeX1), (1, 0.3, nodeX2)]
-	return node
+	register $ Branch (Label "y") $ arcsFromList [(0, 0.3, nodeX1), (1, 0.3, nodeX2)]
+	
 

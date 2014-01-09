@@ -4,9 +4,8 @@ module Data.WODD.Apply where
 import Prelude
 
 import qualified Data.Vector.Unboxed as U
-import Control.Monad
---import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.State.Strict()
+import Control.Exception (assert)
 
 import Data.WODD.Core
 import Data.WODD.Types 
@@ -22,8 +21,6 @@ apply :: Eq v
         -> WODD v
 apply op ord x y = make (handle (top x) (top y))
     where 
-
-        --handle :: Index -> Index -> State (WODD v) Index
         handle ix iy = case (accessAt x ix, accessAt y iy) of 
                 (Terminal, Terminal) -> register Terminal
                 (Terminal, n@Branch{}) -> register n
@@ -61,7 +58,7 @@ apply op ord x y = make (handle (top x) (top y))
 
 product :: Eq v => Order v -> WODD v -> WODD v -> WODD v
 product = apply $ \(v1, w1, _) (v2, w2, _) i
-                    -> (v1, w1 * w2, i) 
+            -> assert (v1 == v2) (v1, w1 * w2, i) 
 
 data L = L Int deriving (Eq)
 instance Show L where
@@ -70,14 +67,15 @@ instance Show L where
 instance Hashable L where
     hashWithSalt i (L l) = hashWithSalt i l
 
+order :: Order L
 order = T.fromList $ fmap L [0..10]
 
 test1 :: WODD L
 test1 = make $ do 
     nodeX1 <- register $ Branch (L 1) $ U.fromList [(0, 0.4, termId), (1, 0.6, termId)]
     --nodeX2 <- register $ Branch (L 1) $ U.fromList [(0, 0.9, termId), (1, 0.1, termId)]
-    node <- register $ Branch (L 2) $ U.fromList [(0, 0.3, nodeX1), (1, 0.3, termId)]
-    return node
+    register $ Branch (L 2) $ U.fromList [(0, 0.3, nodeX1), (1, 0.3, termId)]
+    
 
 
 
